@@ -28,9 +28,13 @@ function StatusChip({ row }) {
   } else if (row.status === 'image_retry') {
     label = row.image_status === 'generating' ? 'Regenerating…' : 'Regeneration queued';
     bg = '#fff4d6'; text = '#b26b00';
+  } else if (row.image_status === 'generating') {
+    label = 'Generating…'; bg = '#fff4d6'; text = '#b26b00';
+  } else if (row.plan && row.plan.status === 'in_production') {
+    label = 'Queued'; bg = '#f0f2f5'; text = '#65676b';
   } else {
-    label = row.image_status === 'generating' ? 'Generating…' : 'Waiting for generation';
-    bg = '#f0f2f5'; text = '#65676b';
+    // copy approved but batch generation never started for this plan
+    label = 'Not started'; bg = '#fde2e1'; text = '#d32f2f';
   }
   return (
     <span
@@ -355,6 +359,16 @@ export default function ImageReviewPage() {
                           onClick={() => doAction(row.id, 'change_scene', { scene: sceneInput[row.id] })}
                         />
                       </div>
+                    )}
+
+                    {/* Not-started hint: batch generation was never triggered for this plan */}
+                    {row.status === 'copy_approved' && row.image_status !== 'generating' &&
+                      (!row.plan || row.plan.status !== 'in_production') && (
+                      <p className="text-[12px] mt-1" style={{ color: '#d32f2f' }}>
+                        Image generation has not been started for this plan. Go to{' '}
+                        <a href="/marketing" className="underline font-semibold">Content Review</a>, select the plan
+                        and press "Start Image Generation".
+                      </p>
                     )}
 
                     {/* Retry-in-progress hint */}

@@ -21,7 +21,7 @@ export async function GET(request, { params }) {
 
   const { data: posts, error: postsError } = await supabase
     .from('content_calendar')
-    .select('id, topic, pillar, fb_content, ig_content, hashtags, image_url, scene_image_url, status, suggested_date, review_notes, post_angle, image_status, scheduled_date, created_at')
+    .select('id, topic, pillar, fb_content, ig_content, hashtags, image_url, scene_image_url, status, suggested_date, review_notes, post_angle, image_status, image_source, scheduled_date, created_at')
     .eq('plan_id', planId)
     .order('suggested_date', { ascending: true })
     .order('created_at', { ascending: true });
