@@ -260,8 +260,8 @@ export default function MarketingReviewPage() {
   }, []);
 
   useEffect(() => {
-    fetchPlans();
-  }, [fetchPlans]);
+    if (gateChecked) fetchPlans();
+  }, [fetchPlans, gateChecked]);
 
   /* ── Fetch posts when plan changes ── */
   const fetchPosts = useCallback(async (planId) => {
@@ -397,6 +397,17 @@ export default function MarketingReviewPage() {
   };
 
   /* ── Render ── */
+
+  // Hold rendering (and the data loads) until the onboarding gate has decided,
+  // so a first-time visitor doesn't flash the Marketing UI before redirecting.
+  if (!gateChecked) {
+    return (
+      <div className="flex items-center gap-2 py-16 justify-center">
+        <Loader2 size={18} className="animate-spin" style={{ color: '#1877f2' }} />
+        <span className="text-[14px]" style={{ color: '#65676b' }}>Loading…</span>
+      </div>
+    );
+  }
 
   return (
     <div>

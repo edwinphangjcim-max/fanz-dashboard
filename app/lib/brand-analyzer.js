@@ -12,9 +12,14 @@
 // 防盗链，需带浏览器 UA + referer（调用方处理）。
 // ============================================
 
+const { safeFetch } = require('./url-guard');
+
 const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/120 Safari/537.36';
+
+// 超大页面全文正则会吃内存/慢，截断到 2MB 足够提取品牌信号
+const MAX_HTML_BYTES = 2 * 1024 * 1024;
 
 function absolutize(src, base) {
   if (!src) return null;
@@ -41,14 +46,14 @@ async function analyzeWebsite(url) {
   const timer = setTimeout(() => controller.abort(), 15000);
   let html, finalUrl = url, status;
   try {
-    const res = await fetch(url, {
+    // safeFetch: SSRF-guarded (blocks private/link-local IPs, re-checks redirects)
+    const res = await safeFetch(url, {
       headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html' },
-      redirect: 'follow',
       signal: controller.signal,
     });
     status = res.status;
     finalUrl = res.url || url;
-    html = await res.text();
+    html = (await res.text()).slice(0, MAX_HTML_BYTES);
   } finally {
     clearTimeout(timer);
   }
