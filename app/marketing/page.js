@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Megaphone,
   CheckCircle,
@@ -178,6 +179,26 @@ function EmptyState() {
    ════════════════════════════════════════════ */
 
 export default function MarketingReviewPage() {
+  const router = useRouter();
+
+  /* ── First-visit brand onboarding gate ──
+     If the brand kit exists but hasn't been onboarded, send them through
+     /onboarding first. Only redirects on an explicit onboarded===false so it
+     stays inert before the migration adds the column (undefined = no gate). */
+  const [gateChecked, setGateChecked] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/brand/kit')
+      .then((r) => r.ok ? r.json() : null)
+      .then((kit) => {
+        if (cancelled) return;
+        if (kit && kit.onboarded === false) { router.replace('/onboarding'); return; }
+        setGateChecked(true);
+      })
+      .catch(() => { if (!cancelled) setGateChecked(true); });
+    return () => { cancelled = true; };
+  }, [router]);
+
   /* ── Plan state ── */
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState(null);
@@ -239,8 +260,8 @@ export default function MarketingReviewPage() {
   }, []);
 
   useEffect(() => {
-    fetchPlans();
-  }, [fetchPlans]);
+    if (gateChecked) fetchPlans();
+  }, [fetchPlans, gateChecked]);
 
   /* ── Fetch posts when plan changes ── */
   const fetchPosts = useCallback(async (planId) => {
@@ -376,6 +397,17 @@ export default function MarketingReviewPage() {
   };
 
   /* ── Render ── */
+
+  // Hold rendering (and the data loads) until the onboarding gate has decided,
+  // so a first-time visitor doesn't flash the Marketing UI before redirecting.
+  if (!gateChecked) {
+    return (
+      <div className="flex items-center gap-2 py-16 justify-center">
+        <Loader2 size={18} className="animate-spin" style={{ color: '#1877f2' }} />
+        <span className="text-[14px]" style={{ color: '#65676b' }}>Loading…</span>
+      </div>
+    );
+  }
 
   return (
     <div>
