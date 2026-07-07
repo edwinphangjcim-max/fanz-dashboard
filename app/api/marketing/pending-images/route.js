@@ -14,7 +14,9 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('content_calendar')
-    .select('id, topic, pillar, image_url, scene_image_url, image_status, image_source, status, plan_id, suggested_date, review_notes, created_at')
+    // '*' 而不是列清单：compose_spec 列在 migration 跑之前不存在，
+    // 显式点名不存在的列会让整个队列接口 500
+    .select('*')
     .in('status', ['image_ready', 'image_retry', 'copy_approved'])
     .order('created_at', { ascending: false });
 

@@ -12,10 +12,34 @@ import {
   AlertCircle,
   Image as ImageIcon,
   Hourglass,
+  PenLine,
 } from 'lucide-react';
 import MarketingTabs from '../tabs';
 
 const POLL_MS = 30_000; // worker generates asynchronously; keep the queue fresh
+
+// Mirrors fanz-marketing-bot assets/products/ — update together when the
+// product asset library changes.
+const PRODUCT_OPTIONS = [
+  { value: 'grande-l.svg', label: 'Grande L Series' },
+  { value: 'aura-series.svg', label: 'Aura Series' },
+  { value: 'smart-series.svg', label: 'Smart Series' },
+  { value: 'fs-series-563.svg', label: 'FS Series 563' },
+  { value: 'air-cooler-01.svg', label: 'Air Cooler' },
+  { value: 'fanz-product-test.png', label: 'Product Photo (test)' },
+];
+
+const TITLE_SLOT_OPTIONS = [
+  { value: 'bottom_center', label: 'Text at bottom' },
+  { value: 'middle_center', label: 'Text in middle' },
+  { value: 'top_center', label: 'Text at top' },
+];
+
+const PRODUCT_SLOT_OPTIONS = [
+  { value: 'top_center', label: 'Product upper center' },
+  { value: 'center', label: 'Product center' },
+  { value: 'center_right', label: 'Product right' },
+];
 
 const PILLAR_EMOJI = {
   product: '🛒', case: '🏠', promo: '🎉', story: '📖', educational: '📚',
@@ -72,7 +96,34 @@ export default function ImageReviewPage() {
   const [actionError, setActionError] = useState({});
   const [sceneInput, setSceneInput] = useState({});   // rowId -> scene text (open = editing)
   const [sceneOpen, setSceneOpen] = useState({});
+  const [editOpen, setEditOpen] = useState({});        // rowId -> compose edit panel open
+  const [editDraft, setEditDraft] = useState({});      // rowId -> { texts, product, title_slot, product_slot }
   const fileInputs = useRef({});
+
+  const openEditPanel = useCallback((row) => {
+    setEditOpen((p) => {
+      const next = !p[row.id];
+      if (next) {
+        // Prefill from compose_spec (worker's record of the last composition),
+        // falling back to the row's topic as the title.
+        const spec = (row.compose_spec && typeof row.compose_spec === 'object') ? row.compose_spec : {};
+        const texts = spec.texts || {};
+        setEditDraft((d) => ({
+          ...d,
+          [row.id]: {
+            title: texts.title ?? row.topic ?? '',
+            selling_point: texts.selling_point ?? '',
+            cta: texts.cta ?? '',
+            product: spec.product || row.source_product_image || PRODUCT_OPTIONS[0].value,
+            title_slot: spec.title_slot || 'bottom_center',
+            product_slot: spec.product_slot || 'top_center',
+          },
+        }));
+      }
+      return { ...p, [row.id]: next };
+    });
+  }, []);
+
 
   const fetchRows = useCallback(async (silent) => {
     if (!silent) setLoading(true);
@@ -111,6 +162,7 @@ export default function ImageReviewPage() {
         setActionError((p) => ({ ...p, [id]: data.error || 'An error occurred.' }));
       } else {
         setSceneOpen((p) => ({ ...p, [id]: false }));
+        setEditOpen((p) => ({ ...p, [id]: false }));
         await fetchRows(true);
       }
     } catch {
@@ -310,6 +362,12 @@ export default function ImageReviewPage() {
                               disabled={busy}
                               onClick={() => doAction(row.id, 'change_product')}
                             />
+                            <ActionButton
+                              icon={PenLine}
+                              label="Edit Text & Layout"
+                              disabled={busy}
+                              onClick={() => openEditPanel(row)}
+                            />
                           </>
                         )}
                         <ActionButton
@@ -361,6 +419,78 @@ export default function ImageReviewPage() {
                       </div>
                     )}
 
+                    {/* Compose edit panel — text / product / layout; saving triggers a
+                        fast deterministic recompose (no AI regeneration) */}
+                    {editOpen[row.id] && canReview && editDraft[row.id] && (
+                      <div
+                        className="mt-2.5 rounded-md p-3 flex flex-col gap-2"
+                        style={{ backgroundColor: '#f7f8fa', border: '1px solid #dadde1' }}
+                      >
+                        {[
+                          { key: 'title', ph: 'Headline (main text on the image)' },
+                          { key: 'selling_point', ph: 'Selling point (optional second line)' },
+                          { key: 'cta', ph: 'Call to action, e.g. "DM us today" (optional)' },
+                        ].map(({ key, ph }) => (
+                          <input
+                            key={key}
+                            type="text"
+                            value={editDraft[row.id][key]}
+                            onChange={(e) => setEditDraft((d) => ({
+                              ...d, [row.id]: { ...d[row.id], [key]: e.target.value },
+                            }))}
+                            placeholder={ph}
+                            className="px-2.5 py-1.5 rounded-md text-[13px] outline-none"
+                            style={{ border: '1px solid #dadde1', color: '#1c1e21', backgroundColor: '#fff' }}
+                          />
+                        ))}
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { key: 'product', options: PRODUCT_OPTIONS },
+                            { key: 'title_slot', options: TITLE_SLOT_OPTIONS },
+                            { key: 'product_slot', options: PRODUCT_SLOT_OPTIONS },
+                          ].map(({ key, options }) => (
+                            <select
+                              key={key}
+                              value={editDraft[row.id][key]}
+                              onChange={(e) => setEditDraft((d) => ({
+                                ...d, [row.id]: { ...d[row.id], [key]: e.target.value },
+                              }))}
+                              className="px-2 py-1.5 rounded-md text-[12.5px] outline-none"
+                              style={{ border: '1px solid #dadde1', color: '#1c1e21', backgroundColor: '#fff' }}
+                            >
+                              {options.map((o) => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                              ))}
+                            </select>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <ActionButton
+                            primary
+                            icon={CheckCircle}
+                            label="Save & Recompose"
+                            disabled={busy || !(editDraft[row.id].title || '').trim()}
+                            onClick={() => {
+                              const draft = editDraft[row.id];
+                              doAction(row.id, 'edit_compose', {
+                                texts: {
+                                  title: draft.title,
+                                  selling_point: draft.selling_point,
+                                  cta: draft.cta,
+                                },
+                                product: draft.product,
+                                title_slot: draft.title_slot,
+                                product_slot: draft.product_slot,
+                              });
+                            }}
+                          />
+                          <span className="text-[11.5px]" style={{ color: '#8a8d91' }}>
+                            Recomposes on the same background — fast, no AI regeneration
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Not-started hint: batch generation was never triggered for this plan */}
                     {row.status === 'copy_approved' && row.image_status !== 'generating' &&
                       (!row.plan || row.plan.status !== 'in_production') && (
@@ -374,10 +504,13 @@ export default function ImageReviewPage() {
                     {/* Retry-in-progress hint */}
                     {row.status === 'image_retry' && (
                       <p className="text-[12px] mt-2" style={{ color: '#8a8d91' }}>
-                        The bot is regenerating this image
-                        {row.review_notes?.startsWith('[scene]') ? ' with a new scene' : ''}
-                        {row.review_notes === '[product-next]' ? ' with the next product image' : ''}
-                        . It reappears here when ready. You can still upload your own or skip.
+                        {row.review_notes === '[recompose]'
+                          ? 'The bot is recomposing this image with your edits (no AI regeneration — usually under a minute).'
+                          : <>The bot is regenerating this image
+                            {row.review_notes?.startsWith('[scene]') ? ' with a new scene' : ''}
+                            {row.review_notes === '[product-next]' ? ' with the next product image' : ''}
+                            . It reappears here when ready.</>}
+                        {' '}You can still upload your own or skip.
                       </p>
                     )}
                   </div>
