@@ -55,6 +55,18 @@ export async function PUT(request) {
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: `Nothing to update. Allowed: ${ALLOWED.join(', ')}` }, { status: 400 });
   }
+
+  // Merge jsonb columns instead of replacing — a partial body (e.g. just one
+  // colour) must not wipe the other keys from the singleton.
+  const JSONB_COLS = ['colors', 'fonts', 'default_layout'];
+  if (JSONB_COLS.some((c) => c in patch)) {
+    const { data: existing } = await supabase.from('brand_kit').select('colors,fonts,default_layout').eq('id', 1).single();
+    for (const c of JSONB_COLS) {
+      if (c in patch && patch[c] && typeof patch[c] === 'object') {
+        patch[c] = { ...(existing?.[c] || {}), ...patch[c] };
+      }
+    }
+  }
   patch.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase

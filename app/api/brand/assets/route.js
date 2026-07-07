@@ -4,8 +4,9 @@ import { supabase } from '@/app/lib/supabase';
 const BUCKET = 'content-images';
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const IMAGE_TYPES = { 'image/png': '.png', 'image/webp': '.webp', 'image/jpeg': '.jpg', 'image/svg+xml': '.svg' };
-const FONT_TYPES = { 'font/ttf': '.ttf', 'font/otf': '.otf', 'application/x-font-ttf': '.ttf', 'application/font-sfnt': '.ttf' };
-const KINDS = ['product', 'logo', 'photo', 'font'];
+// 'font' 是延后子阶段：自定义字体要随容器 fc-cache 安装，未装的族名会让
+// sharp 静默输出空白字形。在字体链路真正打通前不接收字体上传。
+const KINDS = ['product', 'logo', 'photo'];
 
 /** List brand assets, optionally filtered by ?kind= */
 export async function GET(request) {
@@ -53,11 +54,9 @@ export async function POST(request) {
     return NextResponse.json({ error: 'File too large (max 12 MB).' }, { status: 400 });
   }
 
-  const typeMap = kind === 'font' ? FONT_TYPES : IMAGE_TYPES;
-  const ext = typeMap[file.type];
+  const ext = IMAGE_TYPES[file.type];
   if (!ext) {
-    const allowed = Object.keys(typeMap).join(', ');
-    return NextResponse.json({ error: `Unsupported type "${file.type}" for ${kind}. Allowed: ${allowed}` }, { status: 400 });
+    return NextResponse.json({ error: `Unsupported type "${file.type}". Allowed: ${Object.keys(IMAGE_TYPES).join(', ')}` }, { status: 400 });
   }
 
   const name = (form.get('name') || file.name || 'untitled').toString().slice(0, 120);
@@ -94,6 +93,7 @@ export async function POST(request) {
       default_product_slot: slot,
       has_transparency: hasTransparency,
       is_active: true,
+      sort_order: 0,
     })
     .select()
     .single();
