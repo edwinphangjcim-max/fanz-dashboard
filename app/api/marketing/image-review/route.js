@@ -50,10 +50,11 @@ export async function POST(request) {
     return NextResponse.json({ error: 'edit_compose needs at least one of: texts, product, title_slot, product_slot' }, { status: 400 });
   }
 
-  // Read current status
+  // Read current status. '*' 而不是列清单：compose_spec 列在 migration 跑之前
+  // 不存在，显式点名会让这里 400 → 误报 404，连累其他 action。
   const { data: current, error: readError } = await supabase
     .from('content_calendar')
-    .select('id, status, image_url, compose_spec')
+    .select('*')
     .eq('id', id)
     .single();
 
@@ -89,17 +90,32 @@ export async function POST(request) {
       updateData = { status: 'image_retry', review_notes: '[product-next]' };
       break;
     case 'edit_compose': {
+      // Pre-migration guard: without the compose_spec column the update would
+      // 500 with a raw PostgREST error — fail with a clear, actionable message
+      // instead. (Other actions keep working; only layout editing needs it.)
+      if (!('compose_spec' in current)) {
+        return NextResponse.json({
+          error: 'Layout editing needs a DB migration first: ' +
+            'alter table content_calendar add column if not exists compose_spec jsonb;',
+        }, { status: 409 });
+      }
       // Merge edits into compose_spec; the worker's [recompose] path reuses
       // the stored cloud background and re-runs deterministic composition.
       const spec = (current.compose_spec && typeof current.compose_spec === 'object')
         ? { ...current.compose_spec }
         : {};
       if (texts && typeof texts === 'object') {
-        const clean = {};
+        // MERGE into existing texts, don't replace: the first composition may
+        // carry keys the UI doesn't expose (promo_badge etc.) — replacing
+        // would silently drop them forever. An exposed key sent as an empty
+        // string means "clear this text".
+        const merged = { ...(spec.texts || {}) };
         for (const [k, v] of Object.entries(texts)) {
-          if (typeof v === 'string' && v.trim()) clean[k] = v.trim();
+          if (typeof v !== 'string') continue;
+          if (v.trim()) merged[k] = v.trim();
+          else delete merged[k];
         }
-        spec.texts = clean;
+        spec.texts = merged;
       }
       if (typeof title_slot === 'string' && title_slot) spec.title_slot = title_slot;
       if (typeof product_slot === 'string' && product_slot) spec.product_slot = product_slot;

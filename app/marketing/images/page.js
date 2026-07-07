@@ -101,28 +101,28 @@ export default function ImageReviewPage() {
   const fileInputs = useRef({});
 
   const openEditPanel = useCallback((row) => {
-    setEditOpen((p) => {
-      const next = !p[row.id];
-      if (next) {
-        // Prefill from compose_spec (worker's record of the last composition),
-        // falling back to the row's topic as the title.
-        const spec = (row.compose_spec && typeof row.compose_spec === 'object') ? row.compose_spec : {};
-        const texts = spec.texts || {};
-        setEditDraft((d) => ({
-          ...d,
-          [row.id]: {
-            title: texts.title ?? row.topic ?? '',
-            selling_point: texts.selling_point ?? '',
-            cta: texts.cta ?? '',
-            product: spec.product || row.source_product_image || PRODUCT_OPTIONS[0].value,
-            title_slot: spec.title_slot || 'bottom_center',
-            product_slot: spec.product_slot || 'top_center',
-          },
-        }));
-      }
-      return { ...p, [row.id]: next };
-    });
-  }, []);
+    // Two independent top-level setters — no side effects inside an updater
+    // (StrictMode double-invokes updaters).
+    const next = !editOpen[row.id];
+    if (next) {
+      // Prefill from compose_spec (worker's record of the last composition),
+      // falling back to the row's topic as the title.
+      const spec = (row.compose_spec && typeof row.compose_spec === 'object') ? row.compose_spec : {};
+      const texts = spec.texts || {};
+      setEditDraft((d) => ({
+        ...d,
+        [row.id]: {
+          title: texts.title ?? row.topic ?? '',
+          selling_point: texts.selling_point ?? '',
+          cta: texts.cta ?? '',
+          product: spec.product || row.source_product_image || PRODUCT_OPTIONS[0].value,
+          title_slot: spec.title_slot || 'bottom_center',
+          product_slot: spec.product_slot || 'top_center',
+        },
+      }));
+    }
+    setEditOpen((p) => ({ ...p, [row.id]: next }));
+  }, [editOpen]);
 
 
   const fetchRows = useCallback(async (silent) => {
