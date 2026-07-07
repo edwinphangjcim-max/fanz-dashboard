@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   Megaphone,
+  Palette,
   Package,
   Settings,
   ChevronLeft,
@@ -26,6 +27,7 @@ const navItems = [
   { href: '/complaints', label: 'Complaints', icon: AlertTriangle, real: true },
   { href: '/warranty', label: 'Warranty', icon: ShieldCheck, real: true },
   { href: '/marketing', label: 'Marketing', icon: Megaphone, real: true },
+  { href: '/brand', label: 'Brand Kit', icon: Palette, real: true },
   { href: '/products', label: 'Products', icon: Package, real: true },
   { href: '/settings', label: 'Settings', icon: Settings, real: false, comingSub: ['Warranty Rules — Coming Soon', 'WhatsApp Integration — Coming Soon', 'Team Members — Coming Soon'] },
 ];
