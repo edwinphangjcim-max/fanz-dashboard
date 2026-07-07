@@ -101,6 +101,16 @@ async function analyzeWebsite(url) {
     .filter(([h]) => !/^#(FFFFFF|000000|FFF|FEFEFE)$/i.test(h))
     .sort((a, b) => b[1] - a[1]).slice(0, 8).map(([hex, count]) => ({ hex, count }));
 
+  // brand colour guess: most saturated (least grey) among the frequent hints —
+  // greys/near-white dominate counts but a brand accent is a saturated hue.
+  const saturation = (hex) => {
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    return mx === 0 ? 0 : (mx - mn) / mx;
+  };
+  const brandColorGuess = [...topColors].sort((a, b) => saturation(b.hex) - saturation(a.hex))
+    .find((c) => saturation(c.hex) > 0.25)?.hex || (topColors[0] && topColors[0].hex) || null;
+
   // ── fonts ──
   const fonts = [...new Set(
     [...html.matchAll(/font-family:\s*([^;"'}<]+)/gi)].map((m) => m[1].trim())
@@ -137,6 +147,7 @@ async function analyzeWebsite(url) {
     text_samples: [title, metaDesc, ...headings].filter(Boolean).slice(0, 15),
     logo_candidates: logoCandidates,
     product_images: productImages,
+    brand_color_guess: brandColorGuess,
     color_hints: { theme_color: themeColor || null, top_colors: topColors },
     fonts: { css: fonts, google: googleFonts },
     social,

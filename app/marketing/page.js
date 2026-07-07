@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Megaphone,
   CheckCircle,
@@ -178,6 +179,26 @@ function EmptyState() {
    ════════════════════════════════════════════ */
 
 export default function MarketingReviewPage() {
+  const router = useRouter();
+
+  /* ── First-visit brand onboarding gate ──
+     If the brand kit exists but hasn't been onboarded, send them through
+     /onboarding first. Only redirects on an explicit onboarded===false so it
+     stays inert before the migration adds the column (undefined = no gate). */
+  const [gateChecked, setGateChecked] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/brand/kit')
+      .then((r) => r.ok ? r.json() : null)
+      .then((kit) => {
+        if (cancelled) return;
+        if (kit && kit.onboarded === false) { router.replace('/onboarding'); return; }
+        setGateChecked(true);
+      })
+      .catch(() => { if (!cancelled) setGateChecked(true); });
+    return () => { cancelled = true; };
+  }, [router]);
+
   /* ── Plan state ── */
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState(null);

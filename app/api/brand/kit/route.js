@@ -34,7 +34,8 @@ export async function GET() {
   return NextResponse.json({ ...data, logo_url });
 }
 
-const ALLOWED = ['logo_asset_id', 'colors', 'fonts', 'background_style', 'brand_voice', 'default_layout'];
+const ALLOWED = ['logo_asset_id', 'colors', 'fonts', 'background_style', 'brand_voice', 'default_layout',
+  'onboarded', 'website_url', 'tagline'];
 
 export async function PUT(request) {
   if (!supabase) {
