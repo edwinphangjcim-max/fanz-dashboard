@@ -9,6 +9,10 @@ import { supabase } from '@/app/lib/supabase';
  *   'regenerate'     image_ready -> image_retry (bot worker regenerates)
  *   'change_scene'   image_ready -> image_retry + review_notes='[scene] <text>'
  *   'change_product' image_ready -> image_retry + review_notes='[product-next]'
+ *   'edit_compose'   image_ready -> image_retry + review_notes='[recompose]'
+ *                    merges { texts, product, title_slot, product_slot } into
+ *                    compose_spec (and source_product_image); the worker
+ *                    recomposes deterministically — no AI call, seconds-fast
  *   'skip'           image_ready|image_retry -> approved + image_source='skipped'
  *
  * The regenerate/change actions only write DB state; the bot's background
@@ -29,24 +33,28 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { id, action, scene } = body;
+  const { id, action, scene, texts, product, title_slot, product_slot } = body;
 
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
 
-  const ACTIONS = ['approve', 'regenerate', 'change_scene', 'change_product', 'skip'];
+  const ACTIONS = ['approve', 'regenerate', 'change_scene', 'change_product', 'edit_compose', 'skip'];
   if (!ACTIONS.includes(action)) {
     return NextResponse.json({ error: `action must be one of: ${ACTIONS.join(', ')}` }, { status: 400 });
   }
   if (action === 'change_scene' && !(scene || '').trim()) {
     return NextResponse.json({ error: 'scene description is required for change_scene' }, { status: 400 });
   }
+  if (action === 'edit_compose' && !texts && !product && !title_slot && !product_slot) {
+    return NextResponse.json({ error: 'edit_compose needs at least one of: texts, product, title_slot, product_slot' }, { status: 400 });
+  }
 
-  // Read current status
+  // Read current status. '*' 而不是列清单：compose_spec 列在 migration 跑之前
+  // 不存在，显式点名会让这里 400 → 误报 404，连累其他 action。
   const { data: current, error: readError } = await supabase
     .from('content_calendar')
-    .select('id, status, image_url')
+    .select('*')
     .eq('id', id)
     .single();
 
@@ -81,6 +89,48 @@ export async function POST(request) {
     case 'change_product':
       updateData = { status: 'image_retry', review_notes: '[product-next]' };
       break;
+    case 'edit_compose': {
+      // Pre-migration guard: without the compose_spec column the update would
+      // 500 with a raw PostgREST error — fail with a clear, actionable message
+      // instead. (Other actions keep working; only layout editing needs it.)
+      if (!('compose_spec' in current)) {
+        return NextResponse.json({
+          error: 'Layout editing needs a DB migration first: ' +
+            'alter table content_calendar add column if not exists compose_spec jsonb;',
+        }, { status: 409 });
+      }
+      // Merge edits into compose_spec; the worker's [recompose] path reuses
+      // the stored cloud background and re-runs deterministic composition.
+      const spec = (current.compose_spec && typeof current.compose_spec === 'object')
+        ? { ...current.compose_spec }
+        : {};
+      if (texts && typeof texts === 'object') {
+        // MERGE into existing texts, don't replace: the first composition may
+        // carry keys the UI doesn't expose (promo_badge etc.) — replacing
+        // would silently drop them forever. An exposed key sent as an empty
+        // string means "clear this text".
+        const merged = { ...(spec.texts || {}) };
+        for (const [k, v] of Object.entries(texts)) {
+          if (typeof v !== 'string') continue;
+          if (v.trim()) merged[k] = v.trim();
+          else delete merged[k];
+        }
+        spec.texts = merged;
+      }
+      if (typeof title_slot === 'string' && title_slot) spec.title_slot = title_slot;
+      if (typeof product_slot === 'string' && product_slot) spec.product_slot = product_slot;
+      updateData = {
+        status: 'image_retry',
+        review_notes: '[recompose]',
+        compose_spec: spec,
+      };
+      if (typeof product === 'string' && product) {
+        // source_product_image 是产品选择的唯一事实源（worker 端以它为准）
+        updateData.source_product_image = product;
+        spec.product = product;
+      }
+      break;
+    }
     case 'skip':
       updateData = { status: 'approved', image_source: 'skipped' };
       break;
