@@ -23,7 +23,7 @@ import './globals.css';
 const navItems = [
   { href: '/', label: 'Overview', icon: LayoutDashboard, real: true },
   { href: '/service-orders', label: 'Service Orders', icon: Wrench, real: true, comingSub: ['Schedule View — Coming Soon'] },
-  { href: '/conversations', label: 'Conversations', icon: MessageSquare, real: false },
+  { href: '/conversations', label: 'Conversations', icon: MessageSquare, real: true },
   { href: '/complaints', label: 'Complaints', icon: AlertTriangle, real: true },
   { href: '/warranty', label: 'Warranty', icon: ShieldCheck, real: true },
   { href: '/marketing', label: 'Marketing', icon: Megaphone, real: true },
