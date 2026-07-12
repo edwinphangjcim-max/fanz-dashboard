@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Loader2, AlertCircle, Check, Globe, ArrowRight } from 'lucide-react';
+import { Sparkles, Loader2, AlertCircle, Check, Globe, ArrowRight, Wand2 } from 'lucide-react';
 
 const CHECK_BG = 'repeating-conic-gradient(#f0f2f5 0% 25%, #fff 0% 50%) 50% / 16px 16px';
 
@@ -15,6 +15,9 @@ export default function OnboardingPage() {
   const [signals, setSignals] = useState(null);
   const [draft, setDraft] = useState(null); // editable review state
   const [progress, setProgress] = useState('');
+  const [competitorInput, setCompetitorInput] = useState('');
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [suggestError, setSuggestError] = useState('');
 
   const analyze = useCallback(async () => {
     if (!url.trim()) return;
@@ -54,6 +57,32 @@ export default function OnboardingPage() {
     }
     setBusy(false); setProgress('');
   }, [url]);
+
+  const suggestVoice = useCallback(async () => {
+    if (!draft) return;
+    setSuggestBusy(true); setSuggestError('');
+    const competitorUrls = competitorInput
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    try {
+      const res = await fetch('/api/brand/suggest-voice', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandUrl: draft.website_url, competitorUrls }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSuggestError(data.error || 'Suggestion failed.'); setSuggestBusy(false); return; }
+      setDraft((d) => ({
+        ...d,
+        brand_voice: data.brand_voice || d.brand_voice,
+        background_style: data.background_style || d.background_style,
+      }));
+    } catch {
+      setSuggestError('Something went wrong. Please try again.');
+    }
+    setSuggestBusy(false);
+  }, [draft, competitorInput]);
 
   const toggleProduct = (img) => setDraft((d) => ({
     ...d,
@@ -192,6 +221,38 @@ export default function OnboardingPage() {
                 </div>
               </label>
             </div>
+          </div>
+
+          {/* AI voice & style suggest */}
+          <div className="rounded-lg p-4" style={{ backgroundColor: '#fff', border: '1px solid #dadde1' }}>
+            <label className="text-[13px] font-medium block mb-1" style={{ color: '#1c1e21' }}>
+              Competitor websites <span style={{ color: '#8a8d91', fontWeight: 400 }}>(optional, up to 3)</span>
+            </label>
+            <p className="text-[12px] mb-2" style={{ color: '#8a8d91' }}>
+              Comma-separated URLs. AI will study your competitors to write a more differentiated voice.
+            </p>
+            <input
+              type="text"
+              value={competitorInput}
+              onChange={(e) => setCompetitorInput(e.target.value)}
+              placeholder="https://competitor1.com, https://competitor2.com"
+              className="w-full px-3 py-2 rounded-md text-[13px] outline-none mb-3"
+              style={{ border: '1px solid #dadde1', color: '#1c1e21' }}
+            />
+            <button
+              onClick={suggestVoice}
+              disabled={suggestBusy}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md text-[13px] font-semibold disabled:opacity-50"
+              style={{ backgroundColor: '#1877f2', color: '#fff' }}
+            >
+              {suggestBusy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+              {suggestBusy ? 'Analysing…' : 'AI suggest voice & style'}
+            </button>
+            {suggestError && (
+              <div className="flex items-center gap-1.5 mt-2 text-[12.5px]" style={{ color: '#d32f2f' }}>
+                <AlertCircle size={13} />{suggestError}
+              </div>
+            )}
           </div>
 
           {/* text fields */}

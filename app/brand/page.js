@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Palette, Type, ImageIcon, Package, Upload, Loader2, AlertCircle,
-  CheckCircle, Trash2, Save, Info,
+  CheckCircle, Trash2, Save, Info, BookImage,
 } from 'lucide-react';
 
 const PRODUCT_SLOTS = [
@@ -77,6 +77,7 @@ export default function BrandPage() {
   const [busy, setBusy] = useState({});
   const logoInput = useRef(null);
   const productInput = useRef(null);
+  const referenceInput = useRef(null);
 
   const load = useCallback(async () => {
     try {
@@ -114,7 +115,7 @@ export default function BrandPage() {
   }, [kit]);
 
   const uploadAssets = useCallback(async (files, kind) => {
-    const key = kind === 'logo' ? 'logo' : 'products';
+    const key = kind === 'logo' ? 'logo' : kind === 'reference' ? 'reference' : 'products';
     setBusy((p) => ({ ...p, [key]: true }));
     setError('');
     for (const file of files) {
@@ -127,7 +128,12 @@ export default function BrandPage() {
       const res = await fetch('/api/brand/assets', { method: 'POST', body: form });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        setError(`${file.name}: ${d.error || 'upload failed'}`);
+        const isCheckViolation = d.error && (d.error.includes('23514') || d.error.includes('brand_assets_kind_check'));
+        if (isCheckViolation) {
+          setError('Run migration 0002 first (brand_assets kind check)');
+        } else {
+          setError(`${file.name}: ${d.error || 'upload failed'}`);
+        }
       }
     }
     // If a logo was uploaded, point the kit at the newest logo
@@ -167,6 +173,7 @@ export default function BrandPage() {
   }
 
   const products = assets.filter((a) => a.kind === 'product');
+  const references = assets.filter((a) => a.kind === 'reference');
 
   return (
     <div>
@@ -261,6 +268,52 @@ export default function BrandPage() {
           </button>
           {kitSaved && <span className="flex items-center gap-1 text-[13px]" style={{ color: '#31a24c' }}><CheckCircle size={14} /> Saved</span>}
         </div>
+      </Card>
+
+      {/* Reference Designs */}
+      <Card icon={BookImage} title="Reference Designs"
+        desc="Past brand designs used as visual-style references. The AI analyses these to match colour palette, lighting, and mood when generating backgrounds.">
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={() => referenceInput.current?.click()} disabled={busy.reference}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold disabled:opacity-50"
+            style={{ backgroundColor: '#1877f2', color: '#fff' }}>
+            {busy.reference ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload references
+          </button>
+          <input ref={referenceInput} type="file" accept="image/png,image/webp,image/jpeg,image/svg+xml" multiple className="hidden"
+            onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ''; if (fs.length) uploadAssets(fs, 'reference'); }} />
+          <span className="text-[12px]" style={{ color: '#8a8d91' }}>PNG, WebP, JPG or SVG · max 12 MB</span>
+        </div>
+
+        {references.length === 0 ? (
+          <div className="flex flex-col items-center text-center py-10">
+            <BookImage size={22} style={{ color: '#8a8d91' }} />
+            <p className="text-[13px] mt-2" style={{ color: '#65676b' }}>No reference designs yet — upload past posters or ads to guide the AI background style.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {references.map((a) => (
+              <div key={a.id} className="rounded-md overflow-hidden" style={{ border: '1px solid #dadde1', opacity: a.is_active ? 1 : 0.5 }}>
+                <div className="h-28 flex items-center justify-center"
+                  style={{ background: 'repeating-conic-gradient(#f0f2f5 0% 25%, #fff 0% 50%) 50% / 16px 16px' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={a.public_url} alt={a.name} style={{ maxWidth: '90%', maxHeight: '90%' }} />
+                </div>
+                <div className="p-2.5">
+                  <div className="text-[12.5px] font-medium mb-1.5 truncate" style={{ color: '#1c1e21' }} title={a.name}>{a.name}</div>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-1.5 text-[11.5px]" style={{ color: '#65676b' }}>
+                      <input type="checkbox" checked={a.is_active} onChange={(e) => patchAsset(a.id, { is_active: e.target.checked })} />
+                      Active
+                    </label>
+                    <button onClick={() => deleteAsset(a.id)} className="p-1 rounded" style={{ color: '#d32f2f' }} title="Remove">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* Product library */}

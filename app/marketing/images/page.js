@@ -13,10 +13,267 @@ import {
   Image as ImageIcon,
   Hourglass,
   PenLine,
+  MessageSquare,
+  X,
+  Send,
 } from 'lucide-react';
 import MarketingTabs from '../tabs';
 
 const POLL_MS = 30_000; // worker generates asynchronously; keep the queue fresh
+
+// ── Chat panel for "Discuss & Regenerate" ──────────────────────────────────
+
+function ChatPanel({ row, onClose, onRegenerated }) {
+  const [messages, setMessages] = useState([]);   // { role, content, sender_name }
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [done, setDone] = useState(false); // true once regeneration triggered
+  const bottomRef = useRef(null);
+
+  // Load history on mount
+  useEffect(() => {
+    fetch(`/api/image-chat?calendarId=${row.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setMessages(data.map((m) => ({
+            role: m.role,
+            content: m.content,
+            sender_name: m.sender_name,
+          })));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingHistory(false));
+  }, [row.id]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const send = useCallback(async () => {
+    const text = input.trim();
+    if (!text || sending || done) return;
+    setInput('');
+    setSending(true);
+    const optimistic = { role: 'user', content: text, sender_name: null };
+    setMessages((prev) => [...prev, optimistic]);
+
+    try {
+      const res = await fetch('/api/image-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ calendarId: row.id, userMessage: text }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${data.error || 'Something went wrong'}`, sender_name: 'Mark' }]);
+      } else {
+        setMessages((prev) => [...prev, { role: 'assistant', content: data.reply, sender_name: 'Mark' }]);
+        if (data.regenerating) {
+          setDone(true);
+          if (onRegenerated) onRegenerated();
+        }
+      }
+    } catch {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Error: Could not reach server.', sender_name: 'Mark' }]);
+    }
+    setSending(false);
+  }, [input, sending, done, row.id, onRegenerated]);
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  };
+
+  return (
+    // Overlay
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        display: 'flex', alignItems: 'stretch', justifyContent: 'flex-end',
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {/* Panel */}
+      <div
+        style={{
+          width: '100%', maxWidth: 420,
+          backgroundColor: '#ffffff',
+          display: 'flex', flexDirection: 'column',
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '14px 16px',
+            borderBottom: '1px solid #dadde1',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexShrink: 0,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#1c1e21' }}>
+              Discuss &amp; Regenerate
+            </div>
+            <div style={{ fontSize: 12, color: '#65676b', marginTop: 2 }}>
+              {row.topic || '(untitled)'}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ color: '#65676b', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Mark intro hint */}
+        <div
+          style={{
+            margin: '10px 12px 0',
+            padding: '8px 10px',
+            backgroundColor: '#e7f3ff',
+            borderRadius: 8,
+            fontSize: 12,
+            color: '#1877f2',
+            flexShrink: 0,
+          }}
+        >
+          Tell Mark what you dislike about the background. He will propose options and only submit a new generation once you confirm.
+        </div>
+
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {loadingHistory && (
+            <div style={{ textAlign: 'center', color: '#8a8d91', fontSize: 12, paddingTop: 20 }}>
+              <Loader2 size={16} style={{ display: 'inline', color: '#1877f2' }} /> Loading history...
+            </div>
+          )}
+          {!loadingHistory && messages.length === 0 && (
+            <div style={{ textAlign: 'center', color: '#8a8d91', fontSize: 12, paddingTop: 20 }}>
+              No messages yet. Start by telling Mark what you want to change.
+            </div>
+          )}
+          {messages.map((m, i) => {
+            const isAssistant = m.role === 'assistant';
+            return (
+              <div key={i} style={{ display: 'flex', justifyContent: isAssistant ? 'flex-end' : 'flex-start' }}>
+                <div
+                  style={{
+                    maxWidth: '80%',
+                    padding: '8px 12px',
+                    borderRadius: isAssistant
+                      ? '4px 16px 16px 16px'
+                      : '16px 4px 16px 16px',
+                    backgroundColor: isAssistant ? '#1877f2' : '#f0f2f5',
+                    color: isAssistant ? '#ffffff' : '#1c1e21',
+                    fontSize: 13,
+                    lineHeight: 1.45,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {m.content}
+                  <div style={{ fontSize: 10, marginTop: 4, opacity: 0.65, textAlign: isAssistant ? 'right' : 'left' }}>
+                    {isAssistant ? 'Mark' : 'You'}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {sending && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div
+                style={{
+                  padding: '8px 12px', borderRadius: '4px 16px 16px 16px',
+                  backgroundColor: '#e7f3ff', fontSize: 12, color: '#1877f2',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Mark is typing...
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Done notice */}
+        {done && (
+          <div
+            style={{
+              margin: '0 12px 8px',
+              padding: '10px 12px',
+              backgroundColor: '#e6f4ea',
+              border: '1px solid #b7dfbf',
+              borderRadius: 8,
+              fontSize: 12,
+              color: '#1e7e34',
+              flexShrink: 0,
+            }}
+          >
+            Mark has submitted the new background for regeneration. Refresh the queue in a minute to see the result.
+          </div>
+        )}
+
+        {/* Input */}
+        {!done && (
+          <div
+            style={{
+              padding: '10px 12px',
+              borderTop: '1px solid #dadde1',
+              display: 'flex', gap: 8, alignItems: 'flex-end',
+              flexShrink: 0,
+            }}
+          >
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder="Tell Mark what to change..."
+              rows={2}
+              disabled={sending}
+              style={{
+                flex: 1,
+                resize: 'none',
+                border: '1px solid #dadde1',
+                borderRadius: 8,
+                padding: '8px 10px',
+                fontSize: 13,
+                color: '#1c1e21',
+                outline: 'none',
+                fontFamily: 'inherit',
+                lineHeight: 1.4,
+              }}
+            />
+            <button
+              onClick={send}
+              disabled={sending || !input.trim()}
+              style={{
+                backgroundColor: '#1877f2',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 12px',
+                cursor: sending || !input.trim() ? 'not-allowed' : 'pointer',
+                opacity: sending || !input.trim() ? 0.5 : 1,
+                flexShrink: 0,
+                display: 'flex', alignItems: 'center',
+              }}
+            >
+              <Send size={15} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // Mirrors fanz-marketing-bot assets/products/ — update together when the
 // product asset library changes.
@@ -98,6 +355,7 @@ export default function ImageReviewPage() {
   const [sceneOpen, setSceneOpen] = useState({});
   const [editOpen, setEditOpen] = useState({});        // rowId -> compose edit panel open
   const [editDraft, setEditDraft] = useState({});      // rowId -> { texts, product, title_slot, product_slot }
+  const [chatOpen, setChatOpen] = useState(null);      // rowId or null
   const fileInputs = useRef({});
 
   const openEditPanel = useCallback((row) => {
@@ -368,6 +626,12 @@ export default function ImageReviewPage() {
                               disabled={busy}
                               onClick={() => openEditPanel(row)}
                             />
+                            <ActionButton
+                              icon={MessageSquare}
+                              label="Discuss & Regenerate"
+                              disabled={busy}
+                              onClick={() => setChatOpen(row.id)}
+                            />
                           </>
                         )}
                         <ActionButton
@@ -520,6 +784,22 @@ export default function ImageReviewPage() {
           </div>
         </div>
       ))}
+
+      {/* Discuss & Regenerate chat panel */}
+      {chatOpen && (() => {
+        const chatRow = rows.find((r) => r.id === chatOpen);
+        if (!chatRow) return null;
+        return (
+          <ChatPanel
+            row={chatRow}
+            onClose={() => setChatOpen(null)}
+            onRegenerated={() => {
+              fetchRows(true);
+              // Keep panel open so user sees the done notice
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

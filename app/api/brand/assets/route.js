@@ -6,7 +6,7 @@ const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const IMAGE_TYPES = { 'image/png': '.png', 'image/webp': '.webp', 'image/jpeg': '.jpg', 'image/svg+xml': '.svg' };
 // 'font' 是延后子阶段：自定义字体要随容器 fc-cache 安装，未装的族名会让
 // sharp 静默输出空白字形。在字体链路真正打通前不接收字体上传。
-const KINDS = ['product', 'logo', 'photo'];
+const KINDS = ['product', 'logo', 'photo', 'reference'];
 
 /** List brand assets, optionally filtered by ?kind= */
 export async function GET(request) {
